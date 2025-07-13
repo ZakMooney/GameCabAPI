@@ -63,9 +63,32 @@ class IGDBService {
     return this.token;
   }
 
+  // async makeRequest(endpoint, query = '') {
+  //   await this.ensureValidToken();
+
+  //   const response = await fetch(`${this.baseURL}/${endpoint}`, {
+  //     method: 'POST',
+  //     headers: {
+  //       'Client-ID': this.clientId,
+  //       'Authorization': `Bearer ${this.token}`,
+  //       'Content-Type': 'application/json'
+  //     },
+  //     body: query
+  //   });
+
+  //   if (!response.ok) {
+  //     throw new Error(`IGDB API request failed: ${response.statusText}`);
+  //   }
+
+  //   return response.json();
+  // }
+
   async makeRequest(endpoint, query = '') {
     await this.ensureValidToken();
-
+  
+    console.log(`Making request to: ${this.baseURL}/${endpoint}`);
+    console.log(`Query: ${query}`);
+  
     const response = await fetch(`${this.baseURL}/${endpoint}`, {
       method: 'POST',
       headers: {
@@ -75,11 +98,14 @@ class IGDBService {
       },
       body: query
     });
-
+  
     if (!response.ok) {
-      throw new Error(`IGDB API request failed: ${response.statusText}`);
+      const errorText = await response.text();
+      console.error(`IGDB API Error: ${response.status} - ${response.statusText}`);
+      console.error(`Error details: ${errorText}`);
+      throw new Error(`IGDB API request failed: ${response.statusText} - ${errorText}`);
     }
-
+  
     return response.json();
   }
 }
@@ -107,21 +133,35 @@ app.post('/api/games/search', async (req, res) => {
   }
 });
 
-app.get('/api/games/popular', async (req, res) => {
+app.get('/api/games/most-played', async (req, res) => {
   try {
-    const { limit = 20 } = req.query;
+    const { limit = 12 } = req.query;
+
+    const popularityQuery = `fields game_id, value; where popularity_type = 4; limit ${limit}; sort value desc;`;
     
-    const query = `
-      fields name, cover.url, first_release_date, rating;
-      sort rating desc;
-      where rating > 80 & first_release_date != null;
-      limit ${limit};
-    `;
+    const popularityData = await igdbService.makeRequest('popularity_primitives', popularityQuery);
     
-    const results = await igdbService.makeRequest('games', query);
-    res.json(results);
+    if (popularityData.length === 0) {
+      return res.json([]);
+    }
+    
+    const gameIds = popularityData.map(item => item.game_id);
+    const gameDetailsQuery = `fields name, cover.url, first_release_date, rating, summary, genres.name, platforms.name, platforms.abbreviation, platforms.category, category, total_rating, aggregated_rating; where id = (${gameIds.join(',')});`;
+    
+    const gameDetails = await igdbService.makeRequest('games', gameDetailsQuery);
+
+    const combinedResults = popularityData.map(popItem => {
+      const gameDetail = gameDetails.find(game => game.id === popItem.game_id);
+      return {
+        game_id: popItem.game_id,
+        popularity_value: popItem.value,
+        game: gameDetail || null
+      };
+    }).filter(item => item.game !== null);
+    
+    res.json(combinedResults);
   } catch (error) {
-    console.error('Popular games error:', error);
+    console.error('Most played games error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -155,38 +195,6 @@ app.post('/api/igdb/:endpoint', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
-app.post('/api/popularity_primitives', async (req, res) => {
-  try {
-    const { query } = req.body;
-    
-    const results = await igdbService.makeRequest('popularity_primitives', query);
-    res.json(results);
-  } catch (error) {
-    console.error('Popularity primitives error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-
-// app.get('/api/popularity_primitives', async (req, res) => {
-//   try {
-//     const { limit = 50, offset = 0, fields = 'game_id,popularity_type,value' } = req.query;
-    
-//     const query = `
-//       fields ${fields};
-//       limit ${limit};
-//       offset ${offset};
-//       sort value desc;
-//     `;
-    
-//     const results = await igdbService.makeRequest('popularity_primitives', query);
-//     res.json(results);
-//   } catch (error) {
-//     console.error('Popularity primitives error:', error);
-//     res.status(500).json({ error: error.message });
-//   }
-// });
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
