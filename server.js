@@ -4,7 +4,6 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-console.log(123123, process.env, process.env.NODE_ENV)
 // nuclear CORS fix (DEV ONLY)
 if (process.env.NODE_ENV === 'development') {
   app.use((req, res, next) => {
