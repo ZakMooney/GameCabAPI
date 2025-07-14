@@ -166,19 +166,23 @@ app.get('/api/games/most-played', async (req, res) => {
   }
 });
 
-app.get('/api/games/:id', async (req, res) => {
+app.post('/api/games/by-ids', async (req, res) => {
   try {
-    const { id } = req.params;
+    const { gameIds } = req.body;
     
-    const query = `
-      fields name, cover.url, first_release_date, rating, summary, genres.name, platforms.name, screenshots.url;
-      where id = ${id};
-    `;
+    if (!gameIds || !Array.isArray(gameIds) || gameIds.length === 0) {
+      return res.status(400).json({ error: 'gameIds array is required' });
+    }
+    
+    const query = `fields name, cover.url, first_release_date, rating, summary, genres.name, platforms.name, platforms.abbreviation, platforms.category, category, total_rating, aggregated_rating; where id = (${gameIds.join(',')});`;
     
     const results = await igdbService.makeRequest('games', query);
-    res.json(results);
+
+    const sortedResults = gameIds.map(id => results.find(game => game.id === id)).filter(Boolean);
+
+    res.json(sortedResults);
   } catch (error) {
-    console.error('Get game error:', error);
+    console.error('Get games by IDs error:', error);
     res.status(500).json({ error: error.message });
   }
 });
